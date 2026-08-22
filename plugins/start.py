@@ -67,37 +67,20 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return
 
-        # 🔒 DUAL ACCESS CHECK SYSTEM (Strict Mode)
-        link_data = None
-        
-        # 1. अगर लिंक lock_ token के रूप में आया है
-        if base64_string.startswith("lock_"):
-            token = base64_string.split("_", 1)[1]
-            link_data = await db.get_access_link(token)
-            if not link_data:
-                return await message.reply_text("<b>❌ अमान्य या एक्सपायर हो चुका लिंक!</b>")
-        # 2. अगर यूजर ने सीधे Original Base64 Link (Single ya Batch) पर क्लिक किया
-        else:
-            link_data = await db.get_access_by_data(base64_string)
+        # 🔒 MANDATORY ACCESS CHECK
+        has_access = await db.check_access(base64_string, user_id)
 
-        # 🛑 अगर लिंक Protected List में मौजूद है, तो User Access की जाँच करें
-        if link_data:
-            allowed_users = link_data.get("allowed_users", [])
-            
-            # ⛔ अगर यूजर Allowed List में नहीं है तो मना कर दें
-            if user_id not in allowed_users:
-                return await message.reply_text(
-                    "<b>⛔ Access Denied!</b>\n\n"
-                    "आपके पास इस स्टोरी का एक्सेस नहीं है। एक्सेस पाने के लिए पहले पेमेंट पूरा करें!",
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)]]
-                    )
+        # ⛔ अगर यूजर को इस लिंक का एक्सेस नहीं है (या लिस्ट में नहीं है)
+        if not has_access:
+            return await message.reply_text(
+                "<b>⛔ Access Denied!</b>\n\n"
+                "आपके पास इस स्टोरी का एक्सेस नहीं है। एक्सेस पाने के लिए पहले हमारी Mini App से Buy करें!",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)]]
                 )
-            
-            # Approved यूजर के लिए ओरिजिनल फाइल डेटा सेट करें
-            base64_string = link_data.get("base64_data", base64_string)
+            )
 
-        # 🔓 अगर फाइल Restricted नहीं है, या यूजर Approved है तो मैसेज डिकोड करें
+        # 🔓 अगर यूजर Allowed लिस्ट में है तो मैसेज निकालें
         try:
             string = await decode(base64_string)
         except Exception as e:
@@ -187,13 +170,13 @@ async def start_command(client: Client, message: Message):
         
         return
 
-# 👑 ADMIN COMMAND: किसी भी लिंक के लिए कितने भी User IDs को एक्सेस दें
+# 👑 ADMIN COMMAND: यूजर्स को लिंक का एक्सेस दें
 @Bot.on_message(filters.command('grantlink') & filters.private & admin)
 async def grant_link_command(client: Client, message: Message):
     if len(message.command) < 3:
         return await message.reply_text(
-            "<b>Usage:</b> `/grantlink <user_id_1> <user_id_2> ... <base64_string_or_link>`\n\n"
-            "<i>Example:</i> `/grantlink 123456789 987654321 Batch_123`"
+            "<b>Usage:</b> `/grantlink <user_id_1> <user_id_2> ... <link_or_base64>`\n\n"
+            "<i>Example:</i> `/grantlink 123456789 987654321 https://t.me/bot?start=Batch_123`"
         )
     
     try:
@@ -202,15 +185,13 @@ async def grant_link_command(client: Client, message: Message):
         user_ids = [int(uid) for uid in args[:-1]]
 
         base64_data = raw_input.split("start=")[1] if "start=" in raw_input else raw_input
-        token = str(uuid.uuid4())[:8]
 
-        await db.save_access_link(token, user_ids, base64_data)
-        final_link = f"https://t.me/{client.username}?start=lock_{token}"
+        await db.grant_user_access(base64_data, user_ids)
 
         await message.reply_text(
-            f"<b>✅ Restricted Link Created!</b>\n\n"
+            f"<b>✅ Access Granted Successfully!</b>\n\n"
             f"<b>Allowed Users:</b> <code>{user_ids}</code>\n"
-            f"<b>Protected Link:</b> <code>{final_link}</code>"
+            f"<b>Target Link Payload:</b> <code>{base64_data}</code>"
         )
     except Exception as e:
         await message.reply_text(f"<b>Error:</b> {e}")

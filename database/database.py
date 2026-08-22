@@ -32,7 +32,7 @@ class Rohit:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         
-        # 🔒 LOCKED ACCESS LINKS COLLECTION
+        # 🔒 ACCESS LINKS COLLECTION
         self.access_links = self.database['access_links']
 
 
@@ -95,7 +95,6 @@ class Rohit:
         users_docs = await self.banned_user_data.find().to_list(length=None)
         user_ids = [doc['_id'] for doc in users_docs]
         return user_ids
-
 
 
     # AUTO DELETE TIMER SETTINGS
@@ -163,7 +162,6 @@ class Rohit:
 
     # Method 2: Remove a user from the channel set
     async def del_req_user(self, channel_id: int, user_id: int):
-        # Remove the user from the set of users for the channel
         await self.rqst_fsub_Channel_data.update_one(
             {'_id': channel_id}, 
             {'$pull': {'user_ids': user_id}}
@@ -184,18 +182,16 @@ class Rohit:
 
     # Method to check if a channel exists using show_channels
     async def reqChannel_exist(self, channel_id: int):
-        # Get the list of all channel IDs from the database
         channel_ids = await self.show_channels()
-
         if channel_id in channel_ids:
             return True
         else:
             return False
 
 
-    # 🔑 USER ACCESS LINK MANAGEMENT
+    # 🔑 ACCESS LINK MANAGEMENT
     async def save_access_link(self, token: str, allowed_users: list, base64_data: str):
-        """टोकन, अलाउड यूजर आईडी लिस्ट और फाइल डाटा सेव करता है"""
+        """टोकन, अलाउड यूजर आईडी लिस्ट और फाइल का Payload सेव करता है"""
         await self.access_links.update_one(
             {"token": token},
             {"$set": {"allowed_users": allowed_users, "base64_data": base64_data}},
@@ -203,8 +199,12 @@ class Rohit:
         )
 
     async def get_access_link(self, token: str):
-        """टोकन के आधार पर अलाउड यूजर्स और डेटा की जानकारी देता है"""
+        """टोकन से एक्सेस डेटा खोजता है"""
         return await self.access_links.find_one({"token": token})
+
+    async def get_access_by_data(self, base64_data: str):
+        """अगर कोई direct payload/link से भी आए तो यह चेक करेगा कि वह डेटाबेस में लॉक है या नहीं"""
+        return await self.access_links.find_one({"base64_data": base64_data})
 
 
 db = Rohit(DB_URI, DB_NAME)

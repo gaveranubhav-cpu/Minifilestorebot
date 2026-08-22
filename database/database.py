@@ -32,7 +32,7 @@ class Rohit:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         
-        # 🔒 ACCESS LINKS COLLECTION
+        # 🔒 LOCKED ACCESS LINKS COLLECTION
         self.access_links = self.database['access_links']
 
 
@@ -147,8 +147,6 @@ class Rohit:
         )
 
     # REQUEST FORCE-SUB MANAGEMENT
-
-    # Add the user to the set of users for a specific channel
     async def req_user(self, channel_id: int, user_id: int):
         try:
             await self.rqst_fsub_Channel_data.update_one(
@@ -159,15 +157,12 @@ class Rohit:
         except Exception as e:
             print(f"[DB ERROR] Failed to add user to request list: {e}")
 
-
-    # Method 2: Remove a user from the channel set
     async def del_req_user(self, channel_id: int, user_id: int):
         await self.rqst_fsub_Channel_data.update_one(
             {'_id': channel_id}, 
             {'$pull': {'user_ids': user_id}}
         )
 
-    # Check if the user exists in the set of the channel's users
     async def req_user_exist(self, channel_id: int, user_id: int):
         try:
             found = await self.rqst_fsub_Channel_data.find_one({
@@ -179,8 +174,6 @@ class Rohit:
             print(f"[DB ERROR] Failed to check request list: {e}")
             return False  
 
-
-    # Method to check if a channel exists using show_channels
     async def reqChannel_exist(self, channel_id: int):
         channel_ids = await self.show_channels()
         if channel_id in channel_ids:
@@ -189,22 +182,33 @@ class Rohit:
             return False
 
 
-    # 🔑 ACCESS LINK MANAGEMENT
-    async def save_access_link(self, token: str, allowed_users: list, base64_data: str):
-        """टोकन, अलाउड यूजर आईडी लिस्ट और फाइल का Payload सेव करता है"""
+    # 🔑 AUTOMATIC LOCK & ACCESS LINK MANAGEMENT
+    async def register_auto_lock(self, base64_data: str):
+        """नया लिंक बनते ही उसे डिफ़ॉल्ट रूप से लॉक कर देता है"""
+        existing = await self.access_links.find_one({"base64_data": base64_data})
+        if not existing:
+            await self.access_links.insert_one({
+                "base64_data": base64_data,
+                "allowed_users": []
+            })
+
+    async def grant_user_access(self, base64_data: str, user_ids: list):
+        """यूजर आईडी को लिंक का एक्सेस देता है"""
         await self.access_links.update_one(
-            {"token": token},
-            {"$set": {"allowed_users": allowed_users, "base64_data": base64_data}},
+            {"base64_data": base64_data},
+            {"$addToSet": {"allowed_users": {"$each": user_ids}}},
             upsert=True
         )
 
-    async def get_access_link(self, token: str):
-        """टोकन से एक्सेस डेटा खोजता है"""
-        return await self.access_links.find_one({"token": token})
-
-    async def get_access_by_data(self, base64_data: str):
-        """अगर कोई direct payload/link से भी आए तो यह चेक करेगा कि वह डेटाबेस में लॉक है या नहीं"""
-        return await self.access_links.find_one({"base64_data": base64_data})
+    async def check_access(self, base64_data: str, user_id: int):
+        """चेक करता है कि क्या लिंक लॉक है और यूजर को एक्सेस है या नहीं"""
+        link_data = await self.access_links.find_one({"base64_data": base64_data})
+        if not link_data:
+            # अगर डेटाबेस में एंट्री नहीं है तो डिफ़ॉल्ट रूप से सुरक्षा के लिए ब्लॉक करें
+            return False
+        
+        allowed_users = link_data.get("allowed_users", [])
+        return user_id in allowed_users
 
 
 db = Rohit(DB_URI, DB_NAME)

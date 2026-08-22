@@ -1,11 +1,12 @@
 #(©)Codexbotz
 
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from bot import Bot
-from pyrogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from asyncio import TimeoutError
+from bot import Bot
 from helper_func import encode, get_message_id, admin
+from database.database import db
 
 @Bot.on_message(filters.private & admin & filters.command('batch'))
 async def batch(client: Client, message: Message):
@@ -33,12 +34,15 @@ async def batch(client: Client, message: Message):
             await second_message.reply("❌ Error\n\nthis Forwarded Post is not from my DB Channel or this Link is taken from DB Channel", quote = True)
             continue
 
-
     string = f"get-{f_msg_id * abs(client.db_channel.id)}-{s_msg_id * abs(client.db_channel.id)}"
     base64_string = await encode(string)
+    
+    # 🔒 AUTO LOCK: जनरेट होते ही लिंक को लॉक करें
+    await db.register_auto_lock(base64_string)
+
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
-    await second_message.reply_text(f"<b>Here is your link</b>\n\n{link}", quote=True, reply_markup=reply_markup)
+    await second_message.reply_text(f"<b>Here is your batch link (Auto-Locked 🔒)</b>\n\n{link}", quote=True, reply_markup=reply_markup)
 
 
 @Bot.on_message(filters.private & admin & filters.command('genlink'))
@@ -56,9 +60,13 @@ async def link_generator(client: Client, message: Message):
             continue
 
     base64_string = await encode(f"get-{msg_id * abs(client.db_channel.id)}")
+    
+    # 🔒 AUTO LOCK: जनरेट होते ही लिंक को लॉक करें
+    await db.register_auto_lock(base64_string)
+
     link = f"https://t.me/{client.username}?start={base64_string}"
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
-    await channel_message.reply_text(f"<b>Here is your link</b>\n\n{link}", quote=True, reply_markup=reply_markup)
+    await channel_message.reply_text(f"<b>Here is your single link (Auto-Locked 🔒)</b>\n\n{link}", quote=True, reply_markup=reply_markup)
 
 
 @Bot.on_message(filters.private & admin & filters.command("custom_batch"))
@@ -98,7 +106,11 @@ async def custom_batch(client: Client, message: Message):
     end_id = collected[-1] * abs(client.db_channel.id)
     string = f"get-{start_id}-{end_id}"
     base64_string = await encode(string)
+    
+    # 🔒 AUTO LOCK: जनरेट होते ही लिंक को लॉक करें
+    await db.register_auto_lock(base64_string)
+
     link = f"https://t.me/{client.username}?start={base64_string}"
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]])
-    await message.reply(f"<b>Here is your custom batch link:</b>\n\n{link}", reply_markup=reply_markup)
+    await message.reply(f"<b>Here is your custom batch link (Auto-Locked 🔒):</b>\n\n{link}", reply_markup=reply_markup)

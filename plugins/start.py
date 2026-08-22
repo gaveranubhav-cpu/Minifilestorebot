@@ -51,6 +51,7 @@ async def start_command(client: Client, message: Message):
                 [[InlineKeyboardButton("Contact Support", url=BAN_SUPPORT)]]
             )
         )
+        
     # ✅ Check Force Subscription
     if not await is_subscribed(client, user_id):
         return await not_joined(client, message)
@@ -66,17 +67,24 @@ async def start_command(client: Client, message: Message):
         except IndexError:
             return
 
-        # 🔒 LOCK & USER ACCESS CHECK
+        # 🔒 DUAL ACCESS CHECK SYSTEM (Strict Mode)
+        link_data = None
+        
+        # 1. अगर लिंक lock_ token के रूप में आया है
         if base64_string.startswith("lock_"):
             token = base64_string.split("_", 1)[1]
             link_data = await db.get_access_link(token)
-            
             if not link_data:
                 return await message.reply_text("<b>❌ अमान्य या एक्सपायर हो चुका लिंक!</b>")
-            
+        # 2. अगर यूजर ने सीधे Original Base64 Link (Single ya Batch) पर क्लिक किया
+        else:
+            link_data = await db.get_access_by_data(base64_string)
+
+        # 🛑 अगर लिंक Protected List में मौजूद है, तो User Access की जाँच करें
+        if link_data:
             allowed_users = link_data.get("allowed_users", [])
             
-            # ⛔ अगर यूजर एक्सेस लिस्ट में नहीं है तो Mini App का बटन दिखाएं
+            # ⛔ अगर यूजर Allowed List में नहीं है तो मना कर दें
             if user_id not in allowed_users:
                 return await message.reply_text(
                     "<b>⛔ Access Denied!</b>\n\n"
@@ -86,10 +94,15 @@ async def start_command(client: Client, message: Message):
                     )
                 )
             
-            # यदि यूजर Approved है तो असली file payload निकालें
-            base64_string = link_data.get("base64_data")
+            # Approved यूजर के लिए ओरिजिनल फाइल डेटा सेट करें
+            base64_string = link_data.get("base64_data", base64_string)
 
-        string = await decode(base64_string)
+        # 🔓 अगर फाइल Restricted नहीं है, या यूजर Approved है तो मैसेज डिकोड करें
+        try:
+            string = await decode(base64_string)
+        except Exception as e:
+            return await message.reply_text("<b>❌ अमान्य या करप्ट लिंक!</b>")
+
         argument = string.split("-")
 
         ids = []
@@ -133,7 +146,6 @@ async def start_command(client: Client, message: Message):
                     reply_markup=reply_markup,
                     protect_content=PROTECT_CONTENT
                 )
-                # ⏱️ हर फाइल डिलीवर करने के बाद 1 सेकंड का गैप
                 await asyncio.sleep(1)
                 codeflix_msgs.append(copied_msg)
             except Exception as e:
@@ -202,7 +214,3 @@ async def grant_link_command(client: Client, message: Message):
         )
     except Exception as e:
         await message.reply_text(f"<b>Error:</b> {e}")
-
-
-# =====================================================================================##
-# Rest of the functions (not_joined, bcmd, schedule_auto_delete) remain same as original

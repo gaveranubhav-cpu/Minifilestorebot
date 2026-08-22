@@ -17,11 +17,11 @@ import sys
 import time
 import uuid
 from datetime import datetime, timedelta
-from pyrogram import Client, filters, __version__
+from pyrogram import Client, filters, __version__, enums
 from pyrogram.enums import ParseMode, ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, ChatInviteLink, ChatPrivileges
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
-from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated, UserNotParticipant
+from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated, UserNotParticipant, MessageDeleteForbidden
 from bot import Bot
 from config import *
 from helper_func import *
@@ -30,8 +30,8 @@ from database.database import *
 BAN_SUPPORT = f"{BAN_SUPPORT}"
 MINI_APP_URL = "http://t.me/storysellerbyACbot/Store"
 
-# 🛑 ग्लोबली ट्रैक करने के लिए कि किस यूजर ने Cancel दबाया है
-CANCEL_PROCESS = {}
+# 🌀 Cancel task tracking dictionary (Second Bot Logic)
+cancel_tasks = {}
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
@@ -108,36 +108,44 @@ async def start_command(client: Client, message: Message):
                 print(f"Error decoding ID: {e}")
                 return
 
-        # 🔘 Cancel & Buy Premium Buttons के साथ "Please wait..." मैसेज
+        # 🌀 Cancel Task Flag Initialize
+        cancel_tasks[user_id] = False
+
+        # 🔘 Cancel Delivery + Buy Premium Keyboard
         wait_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✖️ Cancel Process", callback_data=f"cancel_send_{user_id}")],
-            [InlineKeyboardButton("🛍️ Buy Premium", url=MINI_APP_URL)]
+            [InlineKeyboardButton("🛍️ Buy Premium", url=MINI_APP_URL, style=enums.ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton("🌀 Cᴀɴᴄᴇʟ 🌀", callback_data=f"cancel_delivery_{user_id}", style=enums.ButtonStyle.DANGER)]
         ])
         
-        CANCEL_PROCESS[user_id] = False
-        temp_msg = await message.reply("<b>Please wait... Processing your files... ⏳</b>", reply_markup=wait_markup)
+        temp_msg = await message.reply("<b>🔺 Pʟᴇᴀsᴇ Wᴀɪᴛ... Processing your files... ⏳</b>", reply_markup=wait_markup)
         
         try:
             messages = await get_messages(client, ids)
         except Exception as e:
-            await temp_msg.delete()
+            try:
+                await temp_msg.delete()
+            except Exception:
+                pass
             await message.reply_text("Something went wrong!")
             print(f"Error getting messages: {e}")
             return
 
         codeflix_msgs = []
-        is_cancelled = False
-
         for msg in messages:
-            # 🛑 अगर यूजर ने Cancel बटन दबा दिया है
-            if CANCEL_PROCESS.get(user_id, False):
-                is_cancelled = True
+            await asyncio.sleep(0.05)
+
+            # 🛑 Check if user clicked cancel button
+            if cancel_tasks.get(user_id, False) is True:
                 break
+
+            if msg.service or (not msg.text and not msg.media):
+                continue
 
             caption = (CUSTOM_CAPTION.format(previouscaption="" if not msg.caption else msg.caption.html, 
                                              filename=msg.document.file_name) if bool(CUSTOM_CAPTION) and bool(msg.document)
                        else ("" if not msg.caption else msg.caption.html))
             reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+
             try:
                 copied_msg = await msg.copy(
                     chat_id=message.from_user.id,
@@ -146,22 +154,35 @@ async def start_command(client: Client, message: Message):
                     reply_markup=reply_markup,
                     protect_content=PROTECT_CONTENT
                 )
-                await asyncio.sleep(1)
+                codeflix_msgs.append(copied_msg)
+            except FloodWait as e:
+                await asyncio.sleep(e.x)
+                if cancel_tasks.get(user_id, False) is True:
+                    break
+                copied_msg = await msg.copy(
+                    chat_id=message.from_user.id,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=reply_markup,
+                    protect_content=PROTECT_CONTENT
+                )
                 codeflix_msgs.append(copied_msg)
             except Exception as e:
                 print(f"Failed to send message: {e}")
 
-        # ✅ सब फ़ाइलें भेजने के बाद ही `Please wait...` डिलीट होगा
+            await asyncio.sleep(1)
+
+        # 🌀 Check cancellation status
+        was_cancelled = cancel_tasks.pop(user_id, False)
+
+        # ⏳ पूरी फ़ाइलें डिलीवर होने या कैंसिल होने के बाद ही `Please wait` डिलीट होगा
         try:
             await temp_msg.delete()
         except Exception:
             pass
 
-        if is_cancelled:
-            CANCEL_PROCESS.pop(user_id, None)
-            return await message.reply_text("<b>❌ प्रोसेस को आपकी तरफ से कैंसिल कर दिया गया।</b>")
-
-        CANCEL_PROCESS.pop(user_id, None)
+        if was_cancelled:
+            return await message.reply_text("❌ <b>Fɪʟᴇ Dᴇʟɪᴠᴇʀʏ Hᴀs Bᴇᴇɴ Cᴀɴᴄᴇʟʟᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ.</b>")
 
         if FILE_AUTO_DELETE > 0 and codeflix_msgs:
             notification_msg = await message.reply(
@@ -199,16 +220,37 @@ async def start_command(client: Client, message: Message):
         
         return
 
-# 🔘 CANCEL BUTTON CALLBACK HANDLER
-@Bot.on_callback_query(filters.regex(r"^cancel_send_"))
-async def cancel_callback_handler(client: Client, query: CallbackQuery):
-    target_user_id = int(query.data.split("_")[2])
+# 🌀 EXACT CANCEL CALLBACK HANDLER FROM YOUR SECOND BOT
+@Bot.on_callback_query(filters.regex(r"^cancel_delivery_"), group=-1)
+async def cancel_delivery_callback(client: Client, callback_query: CallbackQuery):
+    try:
+        target_user_id = int(callback_query.data.split("_")[2])
+    except (IndexError, ValueError):
+        try: await callback_query.answer()
+        except Exception: pass
+        return
     
-    if query.from_user.id != target_user_id:
-        return await query.answer("<b>❌ यह कैंसिल बटन आपके लिए नहीं है!</b>", show_alert=True)
+    if callback_query.from_user.id != target_user_id:
+        try: await callback_query.answer("⚠️ This button is not for you!", show_alert=True)
+        except Exception: pass
+        return
+
+    if cancel_tasks.get(target_user_id, False) is True:
+        try: await callback_query.answer()
+        except Exception: pass
+        return
+
+    cancel_tasks[target_user_id] = True
     
-    CANCEL_PROCESS[target_user_id] = True
-    await query.answer("<b>प्रोसेस कैंसिल की जा रही है...</b>", show_alert=True)
+    try:
+        await callback_query.answer("<b>Cancelling file delivery...</b>", show_alert=True)
+    except Exception:
+        pass
+    
+    try:
+        await callback_query.message.delete()
+    except (MessageDeleteForbidden, Exception):
+        pass
 
 # 👑 ADMIN COMMAND: यूजर्स को लिंक का एक्सेस दें
 @Bot.on_message(filters.command('grantlink') & filters.private & admin)

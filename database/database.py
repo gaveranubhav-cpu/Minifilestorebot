@@ -204,7 +204,6 @@ class Rohit:
         """चेक करता है कि क्या लिंक लॉक है और यूजर को एक्सेस है या नहीं"""
         link_data = await self.access_links.find_one({"base64_data": base64_data})
         if not link_data:
-            # अगर डेटाबेस में एंट्री नहीं है तो डिफ़ॉल्ट रूप से सुरक्षा के लिए ब्लॉक करें
             return False
         
         allowed_users = link_data.get("allowed_users", [])

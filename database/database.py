@@ -32,6 +32,8 @@ class Rohit:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         
+        # 🔒 LOCKED ACCESS LINKS COLLECTION
+        self.access_links = self.database['access_links']
 
 
     # USER DATA
@@ -132,7 +134,7 @@ class Rohit:
         return channel_ids
 
     
-# Get current mode of a channel
+    # Get current mode of a channel
     async def get_channel_mode(self, channel_id: int):
         data = await self.fsub_data.find_one({'_id': channel_id})
         return data.get("mode", "off") if data else "off"
@@ -147,7 +149,7 @@ class Rohit:
 
     # REQUEST FORCE-SUB MANAGEMENT
 
-    # Add the user to the set of users for a   specific channel
+    # Add the user to the set of users for a specific channel
     async def req_user(self, channel_id: int, user_id: int):
         try:
             await self.rqst_fsub_Channel_data.update_one(
@@ -182,17 +184,27 @@ class Rohit:
 
     # Method to check if a channel exists using show_channels
     async def reqChannel_exist(self, channel_id: int):
-    # Get the list of all channel IDs from the database
+        # Get the list of all channel IDs from the database
         channel_ids = await self.show_channels()
-        #print(f"All channel IDs in the database: {channel_ids}")
 
-    # Check if the given channel_id is in the list of channel IDs
         if channel_id in channel_ids:
-            #print(f"Channel {channel_id} found in the database.")
             return True
         else:
-            #print(f"Channel {channel_id} NOT found in the database.")
             return False
+
+
+    # 🔑 USER ACCESS LINK MANAGEMENT
+    async def save_access_link(self, token: str, allowed_users: list, base64_data: str):
+        """टोकन, अलाउड यूजर आईडी लिस्ट और फाइल डाटा सेव करता है"""
+        await self.access_links.update_one(
+            {"token": token},
+            {"$set": {"allowed_users": allowed_users, "base64_data": base64_data}},
+            upsert=True
+        )
+
+    async def get_access_link(self, token: str):
+        """टोकन के आधार पर अलाउड यूजर्स और डेटा की जानकारी देता है"""
+        return await self.access_links.find_one({"token": token})
 
 
 db = Rohit(DB_URI, DB_NAME)

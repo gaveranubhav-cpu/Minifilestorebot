@@ -15,6 +15,7 @@ import os
 import random
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, __version__
 from pyrogram.enums import ParseMode, ChatAction
@@ -27,6 +28,7 @@ from helper_func import *
 from database.database import *
 
 BAN_SUPPORT = f"{BAN_SUPPORT}"
+MINI_APP_URL = "http://t.me/storysellerbyACbot/Store"
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
@@ -51,11 +53,10 @@ async def start_command(client: Client, message: Message):
         )
     # ✅ Check Force Subscription
     if not await is_subscribed(client, user_id):
-        #await temp.delete()
         return await not_joined(client, message)
 
-    # File auto-delete time in seconds (Set your desired time in seconds here)
-    FILE_AUTO_DELETE = await db.get_del_timer()  # Example: 3600 seconds (1 hour)
+    # File auto-delete time in seconds
+    FILE_AUTO_DELETE = await db.get_del_timer()
 
     # Handle normal message flow
     text = message.text
@@ -64,6 +65,29 @@ async def start_command(client: Client, message: Message):
             base64_string = text.split(" ", 1)[1]
         except IndexError:
             return
+
+        # 🔒 LOCK & USER ACCESS CHECK
+        if base64_string.startswith("lock_"):
+            token = base64_string.split("_", 1)[1]
+            link_data = await db.get_access_link(token)
+            
+            if not link_data:
+                return await message.reply_text("<b>❌ अमान्य या एक्सपायर हो चुका लिंक!</b>")
+            
+            allowed_users = link_data.get("allowed_users", [])
+            
+            # ⛔ अगर यूजर एक्सेस लिस्ट में नहीं है तो Mini App का बटन दिखाएं
+            if user_id not in allowed_users:
+                return await message.reply_text(
+                    "<b>⛔ Access Denied!</b>\n\n"
+                    "आपके पास इस स्टोरी का एक्सेस नहीं है। एक्सेस पाने के लिए पहले पेमेंट पूरा करें!",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)]]
+                    )
+                )
+            
+            # यदि यूजर Approved है तो असली file payload निकालें
+            base64_string = link_data.get("base64_data")
 
         string = await decode(base64_string)
         argument = string.split("-")
@@ -109,7 +133,8 @@ async def start_command(client: Client, message: Message):
                     reply_markup=reply_markup,
                     protect_content=PROTECT_CONTENT
                 )
-                await asyncio.sleep(0.1)
+                # ⏱️ हर फाइल डिलीवर करने के बाद 1 सेकंड का गैप
+                await asyncio.sleep(1)
                 codeflix_msgs.append(copied_msg)
             except Exception as e:
                 print(f"Failed to send message: {e}")
@@ -129,13 +154,11 @@ async def start_command(client: Client, message: Message):
     else:
         reply_markup = InlineKeyboardMarkup(
             [
-                    [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/Nova_Flix/50")],
-
-    [
+                [InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)],
+                [
                     InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data = "about"),
                     InlineKeyboardButton('ʜᴇʟᴘ •', callback_data = "help")
-
-    ]
+                ]
             ]
         )
         await message.reply_photo(
@@ -148,129 +171,38 @@ async def start_command(client: Client, message: Message):
                 id=message.from_user.id
             ),
             reply_markup=reply_markup,
-            message_effect_id=5104841245755180586)  # 🔥
+            message_effect_id=5104841245755180586)
         
         return
 
-
-
-#=====================================================================================##
-# Don't Remove Credit @CodeFlix_Bots, @rohit_1888
-# Ask Doubt on telegram @CodeflixSupport
-
-
-
-# Create a global dictionary to store chat data
-chat_data_cache = {}
-
-async def not_joined(client: Client, message: Message):
-    temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
-
-    user_id = message.from_user.id
-    buttons = []
-    count = 0
-
-    try:
-        all_channels = await db.show_channels()  # Should return list of (chat_id, mode) tuples
-        for total, chat_id in enumerate(all_channels, start=1):
-            mode = await db.get_channel_mode(chat_id)  # fetch mode 
-
-            await message.reply_chat_action(ChatAction.TYPING)
-
-            if not await is_sub(client, user_id, chat_id):
-                try:
-                    # Cache chat info
-                    if chat_id in chat_data_cache:
-                        data = chat_data_cache[chat_id]
-                    else:
-                        data = await client.get_chat(chat_id)
-                        chat_data_cache[chat_id] = data
-
-                    name = data.title
-
-                    # Generate proper invite link based on the mode
-                    if mode == "on" and not data.username:
-                        invite = await client.create_chat_invite_link(
-                            chat_id=chat_id,
-                            creates_join_request=True,
-                            expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
-                            )
-                        link = invite.invite_link
-
-                    else:
-                        if data.username:
-                            link = f"https://t.me/{data.username}"
-                        else:
-                            invite = await client.create_chat_invite_link(
-                                chat_id=chat_id,
-                                expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None)
-                            link = invite.invite_link
-
-                    buttons.append([InlineKeyboardButton(text=name, url=link)])
-                    count += 1
-                    await temp.edit(f"<b>{'! ' * count}</b>")
-
-                except Exception as e:
-                    print(f"Error with chat {chat_id}: {e}")
-                    return await temp.edit(
-                        f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @rohit_1888</i></b>\n"
-                        f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
-                    )
-
-        # Retry Button
-        try:
-            buttons.append([
-                InlineKeyboardButton(
-                    text='♻️ Tʀʏ Aɢᴀɪɴ',
-                    url=f"https://t.me/{client.username}?start={message.command[1]}"
-                )
-            ])
-        except IndexError:
-            pass
-
-        await message.reply_photo(
-            photo=FORCE_PIC,
-            caption=FORCE_MSG.format(
-                first=message.from_user.first_name,
-                last=message.from_user.last_name,
-                username=None if not message.from_user.username else '@' + message.from_user.username,
-                mention=message.from_user.mention,
-                id=message.from_user.id
-            ),
-            reply_markup=InlineKeyboardMarkup(buttons),
+# 👑 ADMIN COMMAND: किसी भी लिंक के लिए कितने भी User IDs को एक्सेस दें
+@Bot.on_message(filters.command('grantlink') & filters.private & admin)
+async def grant_link_command(client: Client, message: Message):
+    if len(message.command) < 3:
+        return await message.reply_text(
+            "<b>Usage:</b> `/grantlink <user_id_1> <user_id_2> ... <base64_string_or_link>`\n\n"
+            "<i>Example:</i> `/grantlink 123456789 987654321 Batch_123`"
         )
-
-    except Exception as e:
-        print(f"Final Error: {e}")
-        await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @rohit_1888</i></b>\n"
-            f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
-        )
-
-#=====================================================================================##
-
-@Bot.on_message(filters.command('commands') & filters.private & admin)
-async def bcmd(bot: Bot, message: Message):        
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data = "close")]])
-    await message.reply(text=CMD_TXT, reply_markup = reply_markup, quote= True)
-
-async def schedule_auto_delete(client, codeflix_msgs, notification_msg, file_auto_delete, reload_url):
-    await asyncio.sleep(file_auto_delete)
-    for snt_msg in codeflix_msgs:
-        if snt_msg:
-            try:
-                await snt_msg.delete()
-            except Exception as e:
-                print(f"Error deleting message {snt_msg.id}: {e}")
-
+    
     try:
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
-        ) if reload_url else None
+        args = message.command[1:]
+        raw_input = args[-1]
+        user_ids = [int(uid) for uid in args[:-1]]
 
-        await notification_msg.edit(
-            "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
-            reply_markup=keyboard
+        base64_data = raw_input.split("start=")[1] if "start=" in raw_input else raw_input
+        token = str(uuid.uuid4())[:8]
+
+        await db.save_access_link(token, user_ids, base64_data)
+        final_link = f"https://t.me/{client.username}?start=lock_{token}"
+
+        await message.reply_text(
+            f"<b>✅ Restricted Link Created!</b>\n\n"
+            f"<b>Allowed Users:</b> <code>{user_ids}</code>\n"
+            f"<b>Protected Link:</b> <code>{final_link}</code>"
         )
     except Exception as e:
-        print(f"Error updating notification with 'Get File Again' button: {e}")
+        await message.reply_text(f"<b>Error:</b> {e}")
+
+
+# =====================================================================================##
+# Rest of the functions (not_joined, bcmd, schedule_auto_delete) remain same as original

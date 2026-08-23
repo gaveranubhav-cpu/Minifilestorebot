@@ -113,11 +113,11 @@ async def start_command(client: Client, message: Message):
 
         # 🔘 Cancel Delivery + Buy Premium Keyboard
         wait_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛍️ Buy Premium", url=MINI_APP_URL, style=enums.ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton("🛍️ Buy Stories", url=MINI_APP_URL, style=enums.ButtonStyle.PRIMARY)],
             [InlineKeyboardButton("🌀 Cᴀɴᴄᴇʟ 🌀", callback_data=f"cancel_delivery_{user_id}", style=enums.ButtonStyle.DANGER)]
         ])
         
-        temp_msg = await message.reply("<b>🔺 Pʟᴇᴀsᴇ Wᴀɪᴛ... Processing your files... ⏳</b>", reply_markup=wait_markup)
+        temp_msg = await message.reply("<b>🔺 Pʟᴇᴀsᴇ Wᴀɪᴛ.</b>", reply_markup=wait_markup)
         
         try:
             messages = await get_messages(client, ids)
@@ -199,7 +199,7 @@ async def start_command(client: Client, message: Message):
     else:
         reply_markup = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)],
+                [InlineKeyboardButton("🛍️ buy Story", url=MINI_APP_URL)],
                 [
                     InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data = "about"),
                     InlineKeyboardButton('ʜᴇʟᴘ •', callback_data = "help")
@@ -215,8 +215,7 @@ async def start_command(client: Client, message: Message):
                 mention=message.from_user.mention,
                 id=message.from_user.id
             ),
-            reply_markup=reply_markup,
-            message_effect_id=5104841245755180586)
+            reply_markup=reply_markup
         
         return
 

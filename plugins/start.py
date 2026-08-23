@@ -79,7 +79,7 @@ async def start_command(client: Client, message: Message):
                 "<b>⛔ Access Denied!</b>\n\n"
                 "आपके पास इस स्टोरी का एक्सेस नहीं है। एक्सेस पाने के लिए पहले हमारी Mini App से Buy करें!",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🛍️ Check out our Mini App to buy Story", url=MINI_APP_URL)]]
+                    [[InlineKeyboardButton("🛍️ buy Story", url=MINI_APP_URL)]]
                 )
             )
 
@@ -216,6 +216,7 @@ async def start_command(client: Client, message: Message):
                 id=message.from_user.id
             ),
             reply_markup=reply_markup
+        )
         
         return
 
